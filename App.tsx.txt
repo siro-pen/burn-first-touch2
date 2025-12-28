@@ -1,0 +1,136 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { BurnDepth, PatientData, BurnAssessmentResult, BodyPartBurn } from './types';
+import { BODY_PARTS_NINES_ADULT, calculateParkland, SEVERITY_LEVELS } from './constants';
+import { getBurnAdvisorResponse } from './services/geminiService';
+import BodyMap from './components/BodyMap';
+import { Activity, Calculator, Stethoscope, MessageSquare, AlertTriangle, User, Info, Map as MapIcon, Settings, FileText, RefreshCw, Github, FolderOpen, Save, FileCode, UploadCloud } from 'lucide-react';
+
+const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'calc' | 'ai' | 'info' | 'share'>('calc');
+  const [patient, setPatient] = useState<PatientData>({
+    age: 45, weight: 70, sex: 'male', burns: [], inhalationInjury: false, comorbidities: '',
+  });
+  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  useEffect(() => {
+    const initialBurns: BodyPartBurn[] = BODY_PARTS_NINES_ADULT.map(part => ({
+      partName: part.name, percentage: 0, depth: BurnDepth.IIa
+    }));
+    setPatient(prev => ({ ...prev, burns: initialBurns }));
+  }, []);
+
+  const assessment = useMemo((): BurnAssessmentResult => {
+    const totalTbsa = patient.burns.reduce((sum, b) => sum + b.percentage, 0);
+    const iiiPct = patient.burns.filter(b => b.depth === BurnDepth.III).reduce((sum, b) => sum + b.percentage, 0);
+    const iiPct = patient.burns.filter(b => b.depth === BurnDepth.IIa || b.depth === BurnDepth.IIb).reduce((sum, b) => sum + b.percentage, 0);
+    const burnIndex = iiiPct + (iiPct * 0.5);
+    const parkland = calculateParkland(patient.weight, totalTbsa);
+    let severity: BurnAssessmentResult['severity'] = 'mild';
+    if (burnIndex >= 15 || totalTbsa >= 30 || patient.inhalationInjury) severity = 'critical';
+    else if (burnIndex >= 10 || totalTbsa >= 15) severity = 'severe';
+    else if (totalTbsa >= 5) severity = 'moderate';
+    return { totalTbsa, burnIndex, prognosticIndex: patient.age + totalTbsa, fluidResuscitation: parkland, severity, transferRecommended: severity === 'severe' || severity === 'critical' || patient.inhalationInjury };
+  }, [patient]);
+
+  const handleUpdateBurn = (index: number, key: keyof BodyPartBurn, value: any) => {
+    const newBurns = [...patient.burns];
+    newBurns[index] = { ...newBurns[index], [key]: value };
+    setPatient(prev => ({ ...prev, burns: newBurns }));
+  };
+
+  const handleMapUpdate = (partName: string, percentage: number) => {
+    const index = patient.burns.findIndex(b => b.partName === partName);
+    if (index !== -1) handleUpdateBurn(index, 'percentage', percentage);
+  };
+
+  const generateAdvice = async () => {
+    setIsAiLoading(true);
+    setAiAdvice(null);
+    try {
+      const advice = await getBurnAdvisorResponse(patient, assessment);
+      setAiAdvice(advice);
+      setActiveTab('ai');
+    } catch (e) {
+      setAiAdvice("## ⚠️ エラー\nAPIキーの設定を確認してください。");
+    } finally { setIsAiLoading(false); }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#fbfbfa] flex flex-col md:flex-row text-[#37352f] pb-20 md:pb-0 font-sans">
+      <nav className="hidden md:flex w-64 bg-[#f7f6f3] border-r border-[#edece9] flex-col p-4">
+        <div className="flex items-center gap-3 mb-8 px-2"><Activity className="text-blue-600" /> <span className="font-bold text-lg">BurnFlow Pro</span></div>
+        <div className="space-y-1">
+          <button onClick={() => setActiveTab('calc')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'calc' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}><Calculator size={18} /> 評価・計算</button>
+          <button onClick={() => setActiveTab('ai')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'ai' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}><MessageSquare size={18} /> AI アドバイザー</button>
+          <button onClick={() => setActiveTab('share')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${activeTab === 'share' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}><Settings size={18} /> デプロイ手順</button>
+        </div>
+      </nav>
+      <main className="flex-1 p-6 max-w-5xl mx-auto w-full">
+        {activeTab === 'calc' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="bg-white p-6 rounded-xl border border-[#edece9] shadow-sm">
+                <h2 className="text-sm font-bold text-slate-400 mb-4 flex items-center gap-2"><MapIcon size={16} /> BODY MAP (9の法則)</h2>
+                <BodyMap burns={patient.burns} onUpdate={handleMapUpdate} />
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-[#edece9] shadow-sm">
+                <table className="w-full text-left text-sm">
+                  <thead><tr className="text-slate-400 text-[10px] uppercase font-bold"><th className="pb-3">部位</th><th className="pb-3">面積%</th><th className="pb-3">深達度</th></tr></thead>
+                  <tbody>
+                    {patient.burns.map((burn, idx) => (
+                      <tr key={idx} className="border-t border-slate-50">
+                        <td className="py-2 font-bold text-xs">{burn.partName}</td>
+                        <td className="py-2"><input type="number" value={burn.percentage} onChange={e => handleUpdateBurn(idx, 'percentage', parseInt(e.target.value) || 0)} className="w-12 p-1 bg-slate-50 rounded font-bold" /></td>
+                        <td className="py-2">
+                          <select value={burn.depth} onChange={e => handleUpdateBurn(idx, 'depth', e.target.value as BurnDepth)} className="bg-transparent text-[10px]">
+                            {Object.values(BurnDepth).map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg">
+                <div className={`p-4 rounded-xl text-center mb-6 font-black text-xl ${SEVERITY_LEVELS[assessment.severity].color}`}>{SEVERITY_LEVELS[assessment.severity].label}</div>
+                <div className="space-y-3 mb-6">
+                  <div className="flex justify-between text-sm"><span>TBSA</span><span className="font-bold">{assessment.totalTbsa}%</span></div>
+                  <div className="flex justify-between text-sm"><span>Burn Index</span><span className="font-bold">{assessment.burnIndex.toFixed(1)}</span></div>
+                </div>
+                <div className="bg-blue-600 p-4 rounded-xl text-white text-center">
+                  <div className="text-[10px] font-bold opacity-80 uppercase mb-1">推奨輸液量 (24h)</div>
+                  <div className="text-2xl font-black">{(assessment.fluidResuscitation.first24hTotal / 1000).toFixed(1)} L</div>
+                </div>
+                <button onClick={generateAdvice} className="w-full mt-6 py-3 bg-slate-800 text-white rounded-xl font-bold flex items-center justify-center gap-2"><Stethoscope size={18} /> AI分析を開始</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {activeTab === 'ai' && (
+           <div className="bg-white p-8 rounded-xl border border-slate-200 min-h-[400px]">
+             <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-blue-600"><MessageSquare /> AI 臨床レビュー</h2>
+             {isAiLoading ? <div className="flex flex-col items-center py-20"><RefreshCw className="animate-spin mb-4" /> 分析中...</div> : 
+             <div className="prose prose-slate max-w-none whitespace-pre-wrap text-sm leading-relaxed">{aiAdvice}</div>}
+           </div>
+        )}
+        {activeTab === 'share' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-slate-200">
+              <h2 className="font-bold mb-4">GitHub アップロード用チェックリスト</h2>
+              <div className="space-y-2 text-sm">
+                <div className="p-3 bg-slate-50 rounded flex justify-between"><span>index.html, index.tsx, App.tsx, types.ts, constants.ts, metadata.json</span><span className="text-blue-600 font-bold">直下</span></div>
+                <div className="p-3 bg-blue-50 rounded flex justify-between"><span>components / BodyMap.tsx</span><span className="text-blue-600 font-bold">フォルダ内</span></div>
+                <div className="p-3 bg-indigo-50 rounded flex justify-between"><span>services / geminiService.ts</span><span className="text-blue-600 font-bold">フォルダ内</span></div>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default App;

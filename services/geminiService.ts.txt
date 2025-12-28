@@ -1,0 +1,18 @@
+import { GoogleGenAI } from "@google/genai";
+import { PatientData, BurnAssessmentResult } from "../types";
+
+export const getBurnAdvisorResponse = async (patientData: PatientData, assessment: BurnAssessmentResult) => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const prompt = `あなたは熱傷専門医です。以下の症例への初期対応アドバイスを簡潔に箇条書きで提供してください。
+    年齢:${patientData.age}歳, 体重:${patientData.weight}kg, TBSA:${assessment.totalTbsa}%, BI:${assessment.burnIndex}, 気道熱傷:${patientData.inhalationInjury ? 'あり' : 'なし'}`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-pro-preview",
+      contents: prompt,
+    });
+    return response.text;
+  } catch (error) {
+    return "AI分析エラー: APIキーの設定を確認してください。";
+  }
+};

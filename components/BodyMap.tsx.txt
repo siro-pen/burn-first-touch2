@@ -1,0 +1,38 @@
+import React from 'react';
+import { BodyPartBurn } from '../types';
+
+interface BodyMapProps {
+  burns: BodyPartBurn[];
+  onUpdate: (partName: string, percentage: number) => void;
+}
+
+const BodyMap: React.FC<BodyMapProps> = ({ burns, onUpdate }) => {
+  const regions = [
+    { id: 'head', name: '頭頸部', pct: 9, d: "M50,5 Q60,5 60,20 Q60,30 50,32 Q40,30 40,20 Q40,5 50,5", view: 'front' },
+    { id: 'trunk_front', name: '前体幹', pct: 18, d: "M35,35 L65,35 L70,70 L30,70 Z", view: 'front' },
+    { id: 'leg_l', name: '左下肢', pct: 18, d: "M32,72 L48,72 L45,120 L35,120 Z", view: 'front' },
+    { id: 'leg_r', name: '右下肢', pct: 18, d: "M68,72 L52,72 L55,120 L65,120 Z", view: 'front' },
+  ];
+
+  const handleClick = (name: string, maxPct: number) => {
+    const current = burns.find(b => b.partName === name)?.percentage || 0;
+    onUpdate(name, current === 0 ? maxPct : 0);
+  };
+
+  return (
+    <div className="flex justify-center bg-slate-50 p-4 rounded-xl">
+      <svg viewBox="0 0 100 130" className="w-40 h-52">
+        {regions.map(r => (
+          <path
+            key={r.id}
+            d={r.d}
+            className={`cursor-pointer stroke-2 ${burns.find(b => b.partName === r.name)?.percentage ? 'fill-red-500 stroke-red-700' : 'fill-slate-200 stroke-slate-300'}`}
+            onClick={() => handleClick(r.name, r.pct)}
+          />
+        ))}
+      </svg>
+    </div>
+  );
+};
+
+export default BodyMap;

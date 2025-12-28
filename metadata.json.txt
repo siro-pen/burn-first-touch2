@@ -1,0 +1,5 @@
+{
+  "name": "BurnFlow Pro",
+  "description": "熱傷初期対応支援アプリ",
+  "requestFramePermissions": []
+}
